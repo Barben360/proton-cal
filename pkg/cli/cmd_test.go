@@ -384,3 +384,19 @@ func TestResolveWrapsErrInvalidColor(t *testing.T) {
 		t.Errorf("Resolve(\"\") err = %v, want wrap of ErrInvalidColor", err)
 	}
 }
+
+func TestCLIMCPHTTPRequiresToken(t *testing.T) {
+	t.Setenv("PROTON_CAL_MCP_TOKEN", "")
+	t.Setenv(config.EnvConfigDir, t.TempDir())
+	_, _, err := runCLI(t, nil, "mcp", "--http", "127.0.0.1:0")
+	if err == nil || !strings.Contains(err.Error(), "bearer token") {
+		t.Fatalf("want a bearer-token error, got %v", err)
+	}
+}
+
+func TestCLIMCPTokenFileRequiresHTTP(t *testing.T) {
+	_, _, err := runCLI(t, nil, "mcp", "--token-file", "/nonexistent")
+	if err == nil || !strings.Contains(err.Error(), "--http") {
+		t.Fatalf("want an error saying --token-file needs --http, got %v", err)
+	}
+}
