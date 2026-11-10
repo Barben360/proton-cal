@@ -47,6 +47,12 @@ type Config struct {
 	// DisabledTools lists MCP tool names the server must not expose (fork
 	// addition). Unknown names make the MCP server refuse to start.
 	DisabledTools []string `toml:"disabled_tools,omitempty"`
+
+	// ReadCalendars / WriteCalendars restrict which calendars proton-cal may
+	// see and change (fork addition); entries are calendar IDs or names. See
+	// calsvc's policy for the exact rules. Unset = no restriction.
+	ReadCalendars  []string `toml:"read_calendars,omitempty"`
+	WriteCalendars []string `toml:"write_calendars,omitempty"`
 }
 
 // EffectiveBaseURL returns the configured base URL or the default.

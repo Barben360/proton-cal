@@ -175,7 +175,7 @@ func (s *Service) CreateEvent(ctx context.Context, in CreateEventInput) (*Create
 		return nil, err
 	}
 
-	return withAccessResult(ctx, s, in.Calendar, func(_ calendar.Info, access *calendar.Access) (*CreatedEvent, bool, error) {
+	return withWriteAccessResult(ctx, s, in.Calendar, func(_ calendar.Info, access *calendar.Access) (*CreatedEvent, bool, error) {
 		// A timed event with no explicit end defaults to the calendar's default
 		// duration; resolved here since it needs the unlocked calendar's settings.
 		end := end
@@ -474,7 +474,7 @@ func (s *Service) UpdateEvent(ctx context.Context, in UpdateEventInput) (*event.
 		}
 	}
 
-	return withAccessResult(ctx, s, in.Calendar, func(info calendar.Info, access *calendar.Access) (*event.UpdateOutcome, bool, error) {
+	return withWriteAccessResult(ctx, s, in.Calendar, func(info calendar.Info, access *calendar.Access) (*event.UpdateOutcome, bool, error) {
 		// Resolve the color intent now the calendar is known: "inherit" maps to
 		// the calendar's own color (Proton has no clear/null for color).
 		if in.Color != nil {
@@ -531,7 +531,7 @@ func (s *Service) DeleteEvent(ctx context.Context, in DeleteEventInput) (*event.
 		}
 	}
 
-	return withAccessResult(ctx, s, in.Calendar, func(_ calendar.Info, access *calendar.Access) (*event.DeleteResult, bool, error) {
+	return withWriteAccessResult(ctx, s, in.Calendar, func(_ calendar.Info, access *calendar.Access) (*event.DeleteResult, bool, error) {
 		r, err := event.SmartDelete(ctx, s.client, access, in.EventID, occurrenceTS)
 		if err != nil {
 			// Occurrence deletion EXDATEs the master so needs full decryption;

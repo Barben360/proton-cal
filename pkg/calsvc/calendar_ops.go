@@ -64,7 +64,7 @@ func (s *Service) UpdateCalendar(ctx context.Context, in UpdateCalendarInput) (*
 		colorHex = &hex
 	}
 
-	info, err := s.resolveCalendar(ctx, in.Selector)
+	info, err := s.resolveWritable(ctx, in.Selector)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +161,9 @@ func (s *Service) CreateCalendar(ctx context.Context, in CreateCalendarInput) (*
 	if len(in.Description) > maxCalendarDescriptionLen {
 		return nil, fmt.Errorf("calendar description is too long (%d chars; max %d)", len(in.Description), maxCalendarDescriptionLen)
 	}
+	if !s.policy().mayCreate(name) {
+		return nil, fmt.Errorf("creating calendar %q: its name is not in write_calendars: %w", name, ErrNotWritable)
+	}
 
 	// Resolve the color up front (fail before any write). A calendar has no
 	// inheritable color, so the "default" sentinel is rejected; an empty color
@@ -232,7 +235,7 @@ func (s *Service) ResolveCalendarInfo(ctx context.Context, selector string) (cal
 // scope (re-prove the login password via SRP); managed (holidays) use the managed
 // route without a password. Subscribed calendars cannot be deleted this way.
 func (s *Service) DeleteCalendar(ctx context.Context, in DeleteCalendarInput) error {
-	info, err := s.resolveCalendar(ctx, in.Selector)
+	info, err := s.resolveWritable(ctx, in.Selector)
 	if err != nil {
 		return err
 	}

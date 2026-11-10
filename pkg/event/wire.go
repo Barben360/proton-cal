@@ -247,13 +247,23 @@ func Get(ctx context.Context, client papi.API, calendarID, eventID string) (*cal
 		Event *caltypes.RawEvent `json:"Event"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.Event != nil && envelope.Event.ID != "" {
-		return envelope.Event, nil
+		return checkCalendar(envelope.Event, calendarID)
 	}
 	var bare caltypes.RawEvent
 	if err := json.Unmarshal(raw, &bare); err != nil || bare.ID == "" {
 		return nil, fmt.Errorf("calendar %s: event %s: unrecognized response shape", calendarID, eventID)
 	}
-	return &bare, nil
+	return checkCalendar(&bare, calendarID)
+}
+
+// checkCalendar refuses an event the server reports under another calendar
+// (fork addition): writes are authorised per calendar, so an event must
+// belong to the calendar it was addressed through.
+func checkCalendar(ev *caltypes.RawEvent, calendarID string) (*caltypes.RawEvent, error) {
+	if ev.CalendarID != "" && ev.CalendarID != calendarID {
+		return nil, fmt.Errorf("calendar %s: event %s belongs to calendar %s", calendarID, ev.ID, ev.CalendarID)
+	}
+	return ev, nil
 }
 
 // GetByUID fetches all raw rows sharing an iCal UID (master + exceptions),
