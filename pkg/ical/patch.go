@@ -90,6 +90,9 @@ func PatchCard(card string, patch CardPatch) string {
 // for TEXT properties (SUMMARY/DESCRIPTION/LOCATION).
 func EscapeText(s string) string { return escapeText(s) }
 
+// FoldLine folds one content line at 75 octets (RFC 5545 3.1).
+func FoldLine(line string) string { return foldLine(line) }
+
 // DateValue formats a date(-time) property body (after the name) for the
 // zone/all-day form, mirroring the forms BuildFragments emits.
 func DateValue(t time.Time, tzName string, allDay bool) (string, error) {

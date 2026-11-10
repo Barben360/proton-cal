@@ -98,6 +98,7 @@ func newRootCmd() *cobra.Command {
 		newCreateCmd(),
 		newUpdateCmd(),
 		newDeleteCmd(),
+		newExportCmd(),
 		newMCPCmd(),
 	)
 	return root

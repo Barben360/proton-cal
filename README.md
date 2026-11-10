@@ -181,7 +181,7 @@ timezone = "America/Los_Angeles" # written by login; override freely
 ```
 
 **Calendar allowlists** (`read_calendars`, `write_calendars`) apply to the
-CLI and the MCP server alike:
+CLI and the MCP server alike (except `export calendar`, see below):
 
 - unset `read_calendars` = every calendar visible; unset `write_calendars` =
   every visible calendar writable; a calendar in `write_calendars` is also
@@ -272,6 +272,18 @@ Or for [opencode](https://opencode.ai) (`opencode.json`):
   }
 }
 ```
+
+### Whole-calendar export
+
+`proton-cal export calendar --all-calendars --dir DIR` (or name calendars
+instead of `--all-calendars`) writes one `.ics` per calendar into `DIR`:
+every event row (whole recurring series with their edited occurrences),
+named `<name>-<id hash>.ics` so names stay stable across runs, written
+atomically with mode 0600. Meant for backups, so it **ignores**
+`read_calendars` / `write_calendars`, and it is not exposed as an MCP tool.
+Any calendar failing fails the run and writes nothing; undecryptable events
+are left out and make the command exit non-zero after writing the rest.
+Restore by importing the file in Proton Calendar (Settings, Import).
 
 ### HTTP transport
 
