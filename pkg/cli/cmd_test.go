@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cheeseandcereal/proton-cal/pkg/auth"
 	"github.com/cheeseandcereal/proton-cal/pkg/calcolor"
 	"github.com/cheeseandcereal/proton-cal/pkg/calendar"
 	"github.com/cheeseandcereal/proton-cal/pkg/calsvc"
@@ -398,5 +399,33 @@ func TestCLIMCPTokenFileRequiresHTTP(t *testing.T) {
 	_, _, err := runCLI(t, nil, "mcp", "--token-file", "/nonexistent")
 	if err == nil || !strings.Contains(err.Error(), "--http") {
 		t.Fatalf("want an error saying --token-file needs --http, got %v", err)
+	}
+}
+
+func TestCLILoginNoPromptNeedsPassword(t *testing.T) {
+	t.Setenv(config.EnvConfigDir, t.TempDir())
+	t.Setenv("PROTON_CAL_USERNAME", "me@proton.me")
+	t.Setenv("PROTON_CAL_PASSWORD", "")
+	_, _, err := runCLI(t, nil, "login", "--no-prompt")
+	if err == nil || !strings.Contains(err.Error(), "PROTON_CAL_PASSWORD") {
+		t.Fatalf("want an error naming PROTON_CAL_PASSWORD, got %v", err)
+	}
+}
+
+func TestCLILoginRejectsBadTOTPEnv(t *testing.T) {
+	t.Setenv(config.EnvConfigDir, t.TempDir())
+	t.Setenv("PROTON_CAL_TOTP", "nope")
+	_, _, err := runCLI(t, nil, "login", "--no-prompt")
+	if err == nil || !strings.Contains(err.Error(), "PROTON_CAL_TOTP") {
+		t.Fatalf("want an error naming PROTON_CAL_TOTP, got %v", err)
+	}
+}
+
+func TestCLILoginCaptchaRequiredExplainsNextStep(t *testing.T) {
+	msg := captchaInstructions(&auth.CaptchaRequiredError{URL: "https://verify.proton.me/?methods=captcha&token=T1", Token: "T1"})
+	for _, want := range []string{"https://verify.proton.me/?methods=captcha&token=T1", "--captcha-token T1"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("instructions lack %q:\n%s", want, msg)
+		}
 	}
 }
