@@ -15,12 +15,16 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/cheeseandcereal/proton-cal/pkg/calsvc"
+	"github.com/cheeseandcereal/proton-cal/pkg/config"
 )
 
 // Version is the MCP implementation version advertised to clients. It is set
@@ -58,12 +62,38 @@ func (s *server) service() (*calsvc.Service, error) {
 // Run starts the stdio MCP server, blocking until the client disconnects or ctx
 // is cancelled. Client closing stdin (normal MCP shutdown) is a clean exit.
 func Run(ctx context.Context) error {
-	s := newServer()
-	srv := mcp.NewServer(&mcp.Implementation{Name: "proton-calendar", Version: Version}, nil)
-	s.register(srv)
-	err := srv.Run(ctx, &mcp.StdioTransport{})
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	srv, err := newMCPServer(newServer(), cfg.DisabledTools)
+	if err != nil {
+		return err
+	}
+	err = srv.Run(ctx, &mcp.StdioTransport{})
 	if errors.Is(err, io.EOF) || errors.Is(err, mcp.ErrConnectionClosed) {
 		return nil
 	}
 	return err
+}
+
+// newMCPServer builds the MCP server with every tool registered, minus the
+// disabled ones. A disabled name that matches no tool is an error, so a typo
+// in config.toml cannot silently leave a tool exposed.
+func newMCPServer(s *server, disabled []string) (*mcp.Server, error) {
+	known := allToolNames()
+	var unknown []string
+	for _, name := range disabled {
+		if !slices.Contains(known, name) {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) > 0 {
+		return nil, fmt.Errorf("disabled_tools: unknown tool(s) %s (known: %s)",
+			strings.Join(unknown, ", "), strings.Join(known, ", "))
+	}
+	srv := mcp.NewServer(&mcp.Implementation{Name: "proton-calendar", Version: Version}, nil)
+	s.register(srv)
+	srv.RemoveTools(disabled...)
+	return srv, nil
 }
