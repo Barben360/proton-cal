@@ -251,6 +251,22 @@ Or for [opencode](https://opencode.ai) (`opencode.json`):
 }
 ```
 
+### HTTP transport
+
+`proton-cal mcp --http :8080` serves streamable HTTP instead of stdio, for a
+server shared over a network (e.g. a container next to an agent). The MCP
+endpoint is `/mcp` and always requires `Authorization: Bearer <token>`; the
+token (at least 32 characters) comes from `--token-file` or
+`$PROTON_CAL_MCP_TOKEN`, and the server refuses to start without one.
+`GET /healthz` answers `200 ok` without a token (for container healthchecks).
+Idle sessions are closed after 30 minutes. `disabled_tools` applies to both
+transports.
+
+```bash
+openssl rand -hex 32 > token && chmod 600 token
+proton-cal mcp --http :8080 --token-file token
+```
+
 ## Development
 
 | Target             | What it does                                              |
