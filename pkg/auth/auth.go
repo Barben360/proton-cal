@@ -41,7 +41,17 @@ import (
 // persist. Handles browser-based captcha and TOTP; FIDO2-only 2FA and
 // email-code verification are unsupported.
 func Login(ctx context.Context, prompter Prompter, cfg config.Config) (string, error) {
-	username, password, err := promptCredentials(prompter, cfg.Username)
+	return LoginWith(ctx, prompter, cfg, LoginOptions{})
+}
+
+// LoginWith is Login with credentials supplied up front and CAPTCHA options
+// (fork addition); see LoginOptions.
+func LoginWith(ctx context.Context, prompter Prompter, cfg config.Config, opts LoginOptions) (string, error) {
+	configured := cfg.Username
+	if opts.Creds.Username != "" {
+		configured = opts.Creds.Username
+	}
+	username, password, err := promptCredentials(prompter, configured, opts.Creds.Password)
 	if err != nil {
 		return "", err
 	}
@@ -49,7 +59,7 @@ func Login(ctx context.Context, prompter Prompter, cfg config.Config) (string, e
 	m := papi.NewManager(cfg.EffectiveBaseURL())
 	defer m.Close()
 
-	pc, a, err := authenticate(ctx, m, prompter, username, password)
+	pc, a, err := authenticateWith(ctx, m, prompter, username, password, opts)
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +81,7 @@ func Login(ctx context.Context, prompter Prompter, cfg config.Config) (string, e
 	raw := papi.New(sess, store, cfg.EffectiveBaseURL())
 	defer raw.Close()
 
-	keyPassword, err := promptKeyPassword(prompter, a.PasswordMode, password)
+	keyPassword, err := promptKeyPassword(prompter, a.PasswordMode, password, opts.Creds.MailboxPassword)
 	if err != nil {
 		return "", err
 	}
@@ -101,8 +111,8 @@ func Login(ctx context.Context, prompter Prompter, cfg config.Config) (string, e
 }
 
 // promptCredentials returns the configured username (prompting only when
-// unset) and a freshly prompted password.
-func promptCredentials(prompter Prompter, configured string) (username, password string, err error) {
+// unset) and the given password, else a freshly prompted one.
+func promptCredentials(prompter Prompter, configured, given string) (username, password string, err error) {
 	username = configured
 	if username == "" {
 		input, err := prompter.Prompt("Proton username/email")
@@ -115,6 +125,9 @@ func promptCredentials(prompter Prompter, configured string) (username, password
 		}
 	}
 
+	if given != "" {
+		return username, given, nil
+	}
 	password, err = prompter.PromptSecret("Password")
 	if err != nil {
 		return "", "", fmt.Errorf("reading password: %w", err)
@@ -128,9 +141,24 @@ func promptCredentials(prompter Prompter, configured string) (username, password
 // authenticate performs SRP login (with captcha fallback) and TOTP 2FA,
 // returning an authenticated client.
 func authenticate(ctx context.Context, m *proton.Manager, prompter Prompter, username, password string) (*proton.Client, proton.Auth, error) {
-	pc, a, err := m.NewClientWithLogin(ctx, username, []byte(password))
+	return authenticateWith(ctx, m, prompter, username, password, LoginOptions{})
+}
+
+func authenticateWith(ctx context.Context, m *proton.Manager, prompter Prompter, username, password string, opts LoginOptions) (*proton.Client, proton.Auth, error) {
+	var (
+		pc  *proton.Client
+		a   proton.Auth
+		err error
+	)
+	if opts.CaptchaToken != "" {
+		// Solved since a previous run: go straight to the verified retry.
+		pc, a, err = m.NewClientWithLoginWithHVToken(ctx, username, []byte(password),
+			&proton.APIHVDetails{Methods: []string{"captcha"}, Token: opts.CaptchaToken})
+	} else {
+		pc, a, err = m.NewClientWithLogin(ctx, username, []byte(password))
+	}
 	if err != nil {
-		pc, a, err = loginWithHumanVerification(ctx, m, prompter, username, password, err)
+		pc, a, err = loginWithHumanVerification(ctx, m, prompter, username, password, err, opts)
 		if err != nil {
 			return nil, proton.Auth{}, err
 		}
@@ -145,7 +173,13 @@ func authenticate(ctx context.Context, m *proton.Manager, prompter Prompter, use
 	// HasFIDO2 (2), HasFIDO2AndTOTP (3). Prefer TOTP when available.
 	switch {
 	case a.TwoFA.Enabled&proton.HasTOTP != 0:
-		code, err := prompter.Prompt("2FA code")
+		var code string
+		var err error
+		if opts.Creds.TOTP != nil {
+			code, err = totpCode(ctx, opts.Creds.TOTP)
+		} else {
+			code, err = prompter.Prompt("2FA code")
+		}
 		if err != nil {
 			pc.Close()
 			return nil, proton.Auth{}, fmt.Errorf("reading 2FA code: %w", err)
@@ -163,9 +197,12 @@ func authenticate(ctx context.Context, m *proton.Manager, prompter Prompter, use
 
 // promptKeyPassword returns the key-unlock password: the prompted mailbox
 // password in two-password mode, else the login password.
-func promptKeyPassword(prompter Prompter, mode proton.PasswordMode, loginPassword string) (string, error) {
+func promptKeyPassword(prompter Prompter, mode proton.PasswordMode, loginPassword, given string) (string, error) {
 	if mode != proton.TwoPasswordMode {
 		return loginPassword, nil
+	}
+	if given != "" {
+		return given, nil
 	}
 	keyPassword, err := prompter.PromptSecret("Mailbox password")
 	if err != nil {
@@ -277,48 +314,78 @@ func Logout(ctx context.Context) error {
 	return nil
 }
 
-var openBrowser = browser.OpenURL
+var openBrowser = func(u string) error {
+	silenceBrowser()
+	return browser.OpenURL(u)
+}
 
-// loginWithHumanVerification waits for browser CAPTCHA completion and retries
-// login on code 9001. Other errors are returned wrapped.
-func loginWithHumanVerification(ctx context.Context, m *proton.Manager, prompter Prompter, username, password string, loginErr error) (*proton.Client, proton.Auth, error) {
+// loginWithHumanVerification walks the CAPTCHA challenge(s) of a login that
+// failed with code 9001: show the URL (opening a browser unless disabled),
+// wait for Enter, retry with the token; a retry answered with a new challenge
+// (not solved yet, or expired) starts another round, up to maxCaptchaRounds.
+// With opts.NoWait it returns a *CaptchaRequiredError instead of waiting.
+func loginWithHumanVerification(ctx context.Context, m *proton.Manager, prompter Prompter, username, password string, loginErr error, opts LoginOptions) (*proton.Client, proton.Auth, error) {
+	err := loginErr
+	for round := 1; ; round++ {
+		details, derr := captchaDetails(err)
+		if derr != nil {
+			return nil, proton.Auth{}, derr
+		}
+		// The standalone page records CAPTCHA completion against the challenge token.
+		verifyURL := "https://verify.proton.me/?methods=captcha&token=" + url.QueryEscape(details.Token)
+		if opts.NoWait {
+			return nil, proton.Auth{}, &CaptchaRequiredError{URL: verifyURL, Token: details.Token}
+		}
+		if round > maxCaptchaRounds {
+			return nil, proton.Auth{}, fmt.Errorf("CAPTCHA still not accepted after %d attempts: %w", maxCaptchaRounds, err)
+		}
+		if round > 1 {
+			prompter.Notify("The CAPTCHA was not accepted (not solved yet, or expired). A new challenge follows.")
+		}
+		prompter.Notify("CAPTCHA verification required. Solve it at:\n  " + verifyURL)
+		if !opts.NoBrowser {
+			if berr := openBrowser(verifyURL); berr != nil {
+				prompter.Notify("Could not open your browser automatically. Open the link above to continue.")
+			}
+		}
+		if _, perr := prompter.Prompt("Press Enter after completing the CAPTCHA"); perr != nil {
+			return nil, proton.Auth{}, fmt.Errorf("waiting for captcha verification: %w", perr)
+		}
+
+		details.Methods = []string{"captcha"}
+		pc, a, lerr := m.NewClientWithLoginWithHVToken(ctx, username, []byte(password), details)
+		if lerr == nil {
+			return pc, a, nil
+		}
+		var apiErr *proton.APIError
+		if !errors.As(lerr, &apiErr) || !apiErr.IsHVError() {
+			return nil, proton.Auth{}, fmt.Errorf("login failed after captcha verification: %w", lerr)
+		}
+		err = lerr
+	}
+}
+
+// captchaDetails extracts a CAPTCHA challenge from a login error, or explains
+// why it cannot be handled.
+func captchaDetails(loginErr error) (*proton.APIHVDetails, error) {
 	var apiErr *proton.APIError
 	if !errors.As(loginErr, &apiErr) || !apiErr.IsHVError() {
-		return nil, proton.Auth{}, fmt.Errorf("login failed: %w", loginErr)
+		return nil, fmt.Errorf("login failed: %w", loginErr)
 	}
-
 	var details proton.APIHVDetails
 	if err := json.Unmarshal(apiErr.Details, &details); err != nil {
-		return nil, proton.Auth{}, fmt.Errorf("parsing human verification details: %w", err)
+		return nil, fmt.Errorf("parsing human verification details: %w", err)
 	}
-
 	if !slices.Contains(details.Methods, "captcha") {
-		return nil, proton.Auth{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"no supported verification method available (methods: %s); try logging in at https://account.proton.me first, then retry",
 			strings.Join(details.Methods, ", "),
 		)
 	}
-
 	if details.Token == "" {
-		return nil, proton.Auth{}, errors.New("human verification response is missing a token")
+		return nil, errors.New("human verification response is missing a token")
 	}
-
-	// The standalone page records CAPTCHA completion against the challenge token.
-	verifyURL := "https://verify.proton.me/?methods=captcha&token=" + url.QueryEscape(details.Token)
-	prompter.Notify("CAPTCHA verification required. Opening your browser.\nBackup URL: " + verifyURL)
-	if err := openBrowser(verifyURL); err != nil {
-		prompter.Notify("Could not open your browser automatically. Open the link above to continue.")
-	}
-	if _, err := prompter.Prompt("Press Enter after completing the CAPTCHA"); err != nil {
-		return nil, proton.Auth{}, fmt.Errorf("waiting for captcha verification: %w", err)
-	}
-
-	details.Methods = []string{"captcha"}
-	pc, a, err := m.NewClientWithLoginWithHVToken(ctx, username, []byte(password), &details)
-	if err != nil {
-		return nil, proton.Auth{}, fmt.Errorf("login failed after captcha verification: %w", err)
-	}
-	return pc, a, nil
+	return &details, nil
 }
 
 // isInsufficientScope reports whether the token lacks scope (Proton code

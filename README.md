@@ -273,6 +273,31 @@ Or for [opencode](https://opencode.ai) (`opencode.json`):
 }
 ```
 
+### Non-interactive login
+
+`proton-cal login` takes its credentials from the environment when set, so a
+password manager can inject them, e.g. with the Proton Pass CLI:
+
+```bash
+cat > login.env <<'ENV'
+PROTON_CAL_USERNAME=pass://Personal/Proton/username
+PROTON_CAL_PASSWORD=pass://Personal/Proton/password
+PROTON_CAL_TOTP=pass://Personal/Proton/totp?totp=uri
+ENV
+pass-cli run --env-file login.env -- proton-cal login --no-prompt
+```
+
+- `PROTON_CAL_TOTP` takes a code or an `otpauth://totp/` URI; with the URI the
+  code is computed at the 2FA step (waiting for a fresh window when the
+  current one is about to end), so prefer `?totp=uri`.
+- `PROTON_CAL_MAILBOX_PASSWORD` is only needed in two-password mode.
+- `--no-prompt` never reads the terminal: a missing credential fails naming
+  its variable, and a CAPTCHA ends the run with the URL to solve (on any
+  device) and the `--captcha-token` to rerun with.
+- Interactively, the CAPTCHA URL is opened in a browser (silently) unless
+  `--no-browser` is given or there is no display, and an unaccepted CAPTCHA
+  is offered again (up to 3 rounds).
+
 ### Whole-calendar export
 
 `proton-cal export calendar --all-calendars --dir DIR` (or name calendars

@@ -179,7 +179,7 @@ func TestLoginWithHumanVerificationErrors(t *testing.T) {
 			}}
 			pc, _, err := loginWithHumanVerification(t.Context(), m, p, testUser, testPass, &proton.APIError{
 				Code: 9001, Details: proton.ErrDetails(tt.details),
-			})
+			}, LoginOptions{})
 			if pc != nil {
 				pc.Close()
 				t.Error("returned a client on failed verification")
