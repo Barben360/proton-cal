@@ -171,6 +171,9 @@ All time-based commands accept `--tz` (default: the `timezone` saved in
 username = "you"                 # written by login
 timezone = "America/Los_Angeles" # written by login; override freely
 # base_url = "https://mail-api.proton.me"  # optional override
+
+# MCP tools the server must not expose (unknown names refuse to start)
+# disabled_tools = ["delete_calendar", "update_calendar", "create_calendar"]
 ```
 
 The default calendar (used when no `--calendar` is given, and shown as

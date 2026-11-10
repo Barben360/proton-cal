@@ -43,6 +43,10 @@ type Config struct {
 	Username string `toml:"username,omitempty"`
 	Timezone string `toml:"timezone,omitempty"`
 	BaseURL  string `toml:"base_url,omitempty"`
+
+	// DisabledTools lists MCP tool names the server must not expose (fork
+	// addition). Unknown names make the MCP server refuse to start.
+	DisabledTools []string `toml:"disabled_tools,omitempty"`
 }
 
 // EffectiveBaseURL returns the configured base URL or the default.

@@ -3,6 +3,8 @@ package config
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -34,11 +36,11 @@ func TestConfigSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load (missing): %v", err)
 	}
-	if (got != Config{}) {
+	if !reflect.DeepEqual(got, Config{}) {
 		t.Errorf("missing config not zero: %+v", got)
 	}
 
-	want := Config{Username: "u@proton.me", Timezone: "America/New_York", BaseURL: "https://h.test"}
+	want := Config{Username: "u@proton.me", Timezone: "America/New_York", BaseURL: "https://h.test", DisabledTools: []string{"delete_calendar"}}
 	if err := Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -46,7 +48,7 @@ func TestConfigSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("round trip:\n got %+v\nwant %+v", got, want)
 	}
 }
@@ -187,5 +189,20 @@ func TestRefreshCancelledWhileWaitingForLock(t *testing.T) {
 	})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Refresh error = %v, want context.Canceled", err)
+	}
+}
+
+func TestDisabledToolsLoadedFromConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(EnvConfigDir, dir)
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(`disabled_tools = ["delete_calendar", "update_calendar"]`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"delete_calendar", "update_calendar"}; !reflect.DeepEqual(cfg.DisabledTools, want) {
+		t.Fatalf("DisabledTools = %v, want %v", cfg.DisabledTools, want)
 	}
 }

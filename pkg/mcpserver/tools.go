@@ -169,6 +169,16 @@ func enumInputSchema[In any](typeSchemas map[reflect.Type]*jsonschema.Schema) *j
 	return schema
 }
 
+// allToolNames returns the name of every tool register adds, sorted. Kept in
+// sync with register by TestNoDisabledToolsKeepsEverything.
+func allToolNames() []string {
+	return []string{
+		"create_calendar", "create_event", "delete_calendar", "delete_event",
+		"get_calendar", "get_event", "list_calendars", "list_events",
+		"update_calendar", "update_event",
+	}
+}
+
 // register adds all proton-calendar tools to the MCP server.
 func (s *server) register(srv *mcp.Server) {
 	getEventInput := enumInputSchema[getEventArgs](map[reflect.Type]*jsonschema.Schema{
