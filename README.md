@@ -174,7 +174,29 @@ timezone = "America/Los_Angeles" # written by login; override freely
 
 # MCP tools the server must not expose (unknown names refuse to start)
 # disabled_tools = ["delete_calendar", "update_calendar", "create_calendar"]
+
+# Calendars proton-cal may see / change (IDs or case-insensitive names)
+# read_calendars  = ["Personal", "Work"]
+# write_calendars = ["Personal", "Agent"]
 ```
+
+**Calendar allowlists** (`read_calendars`, `write_calendars`) apply to the
+CLI and the MCP server alike:
+
+- unset `read_calendars` = every calendar visible; unset `write_calendars` =
+  every visible calendar writable; a calendar in `write_calendars` is also
+  visible;
+- a hidden calendar is absent from listings and cannot be selected (by name
+  or ID), including through `--all-calendars`;
+- a write to a visible but read-only calendar fails before any key is
+  unlocked; so does creating a calendar whose name is not in
+  `write_calendars`;
+- with no calendar given, reads skip a hidden account default, and writes
+  refuse (listing the writable calendars) when the default is not writable;
+- an event the API reports under another calendar than the one it was
+  addressed through is refused.
+
+Prefer IDs (`proton-cal calendars` shows them): names follow renames.
 
 The default calendar (used when no `--calendar` is given, and shown as
 `[default]`) is your **account's** default calendar from Proton, not a local

@@ -137,10 +137,11 @@ func (s *Service) RefreshDefaultCalendarID(ctx context.Context) (string, error) 
 // subsequent reads reflect calendar and default changes in the Proton app.
 func (s *Service) Calendars(ctx context.Context) ([]calendar.Info, error) {
 	cals, err := s.fetchCalendars(ctx, s.freshAPI)
-	if err == nil {
-		s.invalidateCache(calendar.UserSettingsPath)
+	if err != nil {
+		return nil, err
 	}
-	return cals, err
+	s.invalidateCache(calendar.UserSettingsPath)
+	return s.policy().visible(cals), nil
 }
 
 // listCalendars returns the calendar list for selector resolution, served
@@ -211,21 +212,23 @@ func resolveWith[T any](ctx context.Context, s *Service, needDefault bool, resol
 // resolveCalendar resolves a selector ("" = server-side default, else first)
 // against the cached list, refetching fresh once if a stale list fails.
 func (s *Service) resolveCalendar(ctx context.Context, selector string) (calendar.Info, error) {
+	p := s.policy()
 	return resolveWith(ctx, s, selector == "",
 		func(cals []calendar.Info, defaultID string) (calendar.Info, error) {
-			return calendar.Resolve(cals, selector, defaultID)
+			return calendar.Resolve(p.visible(cals), selector, defaultID)
 		})
 }
 
 // resolveCalendars resolves a set of selectors (or all calendars) to calendar
 // infos, with the same stale-cache refetch fallback as resolveCalendar.
 func (s *Service) resolveCalendars(ctx context.Context, selectors []string, all bool) ([]calendar.Info, error) {
+	p := s.policy()
 	return resolveWith(ctx, s, !all && len(selectors) == 0,
 		func(cals []calendar.Info, defaultID string) ([]calendar.Info, error) {
 			if all {
-				return calendar.ResolveAll(cals)
+				return calendar.ResolveAll(p.visible(cals))
 			}
-			return calendar.ResolveMany(cals, selectors, defaultID)
+			return calendar.ResolveMany(p.visible(cals), selectors, defaultID)
 		})
 }
 
