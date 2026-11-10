@@ -111,6 +111,8 @@ type eventsResponse struct {
 	Events []*caltypes.RawEvent `json:"Events"`
 	// More is the page cursor on Type-scoped queries (1 = another page follows).
 	More int `json:"More"`
+	// Total is the row count on the legacy unscoped query (no Type).
+	Total int `json:"Total"`
 }
 
 // Windowed-query constants. /events honours Start/End only with a Type

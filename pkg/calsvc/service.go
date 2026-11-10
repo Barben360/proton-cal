@@ -222,7 +222,12 @@ func (s *Service) resolveCalendar(ctx context.Context, selector string) (calenda
 // resolveCalendars resolves a set of selectors (or all calendars) to calendar
 // infos, with the same stale-cache refetch fallback as resolveCalendar.
 func (s *Service) resolveCalendars(ctx context.Context, selectors []string, all bool) ([]calendar.Info, error) {
-	p := s.policy()
+	return s.resolveCalendarsWith(ctx, s.policy(), selectors, all)
+}
+
+// resolveCalendarsWith is resolveCalendars under an explicit policy (export
+// passes the empty, unrestricted one).
+func (s *Service) resolveCalendarsWith(ctx context.Context, p policy, selectors []string, all bool) ([]calendar.Info, error) {
 	return resolveWith(ctx, s, !all && len(selectors) == 0,
 		func(cals []calendar.Info, defaultID string) ([]calendar.Info, error) {
 			if all {
